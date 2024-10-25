@@ -58,10 +58,30 @@
         
         const gl = canvas.getContext("experimental-webgl",{antialias:false});
         
-        const vs = "uniform mat4 u_projectionMatrix; attribute vec2 texcoord; varying vec2 v_texCoord; attribute vec4 position; void main() { v_texCoord = texcoord; gl_Position = u_projectionMatrix*(position+vec4(0.0,0.0,-4.0,0.0)); }"
-        const fs = "precision mediump float; varying vec2 v_texCoord; uniform sampler2D u_texture; void main() { gl_FragColor = texture2D(u_texture,v_texCoord); }"
-        
-        const program = twgl.createProgramFromSources(gl,[vs,fs]);
+        const program = twgl.createProgramFromSources(gl,[`
+attribute vec2 texcoord; 
+varying vec2 v_texCoord; 
+attribute vec4 position; 
+uniform mat4 u_projectionMatrix; 
+uniform float t;
+mat4 rx(float rad) {
+  return mat4( 
+    cos(rad),0.0,sin(rad),0.0,
+    0.0,1.0,0.0,0.0,
+    -sin(rad),0.0,cos(rad),0.0,
+    0.0,0.0,0.0,1.0
+  );
+}
+void main() { 
+  v_texCoord = texcoord; 
+  gl_Position = u_projectionMatrix*((rx(-t)*position)+vec4(0.0,0.0,-5.0,0.0)); 
+}`,`
+precision mediump float; 
+varying vec2 v_texCoord; 
+uniform sampler2D u_texture; 
+void main() { 
+ gl_FragColor = texture2D(u_texture,v_texCoord); 
+}`]);
         if(program) {
           
           const programInfo = twgl.createProgramInfoFromProgram(gl,program);
@@ -123,20 +143,22 @@
           });
           resize();
           
+          context.fillStyle = "#00F";
+          context.fillRect(0,0,video.width,video.height);
+          gl.bindTexture(gl.TEXTURE_2D,uniforms.u_texture)
+          gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,video);
+                    
           let frame = 0;
           const draw = (e)=>{
-            context.fillStyle = "#0"+frame.toString(16)+"0";
-            if(++frame>=0x10) frame = 0;
-            
-            context.fillRect(0,0,video.width,video.height);
-            gl.bindTexture(gl.TEXTURE_2D,uniforms.u_texture)
-            gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,video);
             
             gl.viewport(0,0,width,height);
             gl.enable(gl.DEPTH_TEST);
             
             gl.clearColor(0,0,0,0);
             gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+            
+            uniforms.t = frame/30.0 * Math.PI;
+            if(++frame>=60) frame = 0;
             
             gl.useProgram(program);
             twgl.setBuffersAndAttributes(gl,programInfo,bufferInfo);
