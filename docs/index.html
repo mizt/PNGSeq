@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>PNGSeq</title>
+    <meta charset="utf-8">
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="icon" href="data:;base64,=">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+      
+      * {
+        font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+        font-size:15px;
+        margin:0;
+        padding:0;
+        -webkit-user-select:none;
+        -moz-user-select:none;
+        -ms-user-select:none;
+      }
+      
+      body {
+        background:#000;
+        width:100dvw;
+        height:100dvh;
+        overflow:hidden;
+      }
+      
+      input {
+        background:#F00;
+        border:none;
+        width:17px;
+        height:17px;
+        border-radius:50%;
+      }
+      
+      </style>
+  </head>
+  <body>
+    <script src="./twgl.min.js"></script>
+    <script src="./PNGSeq.js"></script>
+    <script type="module">
+      
+      const width = 1920;
+      const height = 1080;
+      
+      import { Recorder } from "./Recorder.js"
+      let recorder = new Recorder(width,height);
+      
+      if(recorder.isSupported()) {
+        
+        const canvas = document.createElement("canvas");
+        Object.assign(canvas,{width:width,height:height});
+        Object.assign(canvas.style,{"vertical-align":"top","outline":"1px solid #666"});
+        
+        const div = document.createElement("div");
+        Object.assign(div.style,{"display":"flex","width":"100vw","height":"100dvh"});
+        div.appendChild(canvas);
+        
+        const gl = canvas.getContext("experimental-webgl",{antialias:false});
+        
+        const vs = "uniform mat4 u_projectionMatrix; attribute vec2 texcoord; varying vec2 v_texCoord; attribute vec4 position; void main() { v_texCoord = texcoord; gl_Position = u_projectionMatrix*(position+vec4(0.0,0.0,-4.0,0.0)); }"
+        const fs = "precision mediump float; varying vec2 v_texCoord; uniform sampler2D u_texture; void main() { gl_FragColor = texture2D(u_texture,v_texCoord); }"
+        
+        const program = twgl.createProgramFromSources(gl,[vs,fs]);
+        if(program) {
+          
+          const programInfo = twgl.createProgramInfoFromProgram(gl,program);
+          const bufferInfo = twgl.createBufferInfoFromArrays(gl,{
+            position:{numComponents:3,data:[-1,-1,0,1,-1,0,-1,1,0,1,1,0]},
+            texcoord:{numComponents:2,data:[0,0,0,1,1,0,1,1]},
+            indices: {numComponents:3,data:[0,1,2,1,2,3]}
+          });
+          
+          const fov = 60;
+          const near = 0.01;
+          const far = 1000.0;
+          
+          const y = 1.0/Math.tan((fov*0.5)*(Math.PI/180.0));
+          const x = y*(height/width);
+          
+          const video = document.createElement("canvas");
+          video.width = 512;
+          video.height = 512;
+          const context = video.getContext("2d");
+          context.fillStyle = "#00F";
+          context.fillRect(0,0,video.width,video.height);
+          
+          const uniforms = {
+            u_texture:twgl.createTexture(gl,{
+              min:gl.LINEAR,
+              mag:gl.LINEAR,
+              format:gl.RGBA,
+              src:video,
+            }),
+            u_projectionMatrix:[
+              x,0,0,0,
+              0,y,0,0,0,
+              0,-((far+near)/(far-near)),-1,
+              0,0,-((2.0*far*near)/(far-near)),0
+            ]
+          };
+          
+          const color = ()=>{
+            return ""+(((Math.random()*16)>>0).toString(16));
+          }
+          
+          const resize = (e)=>{
+            const sx = window.innerWidth/width;
+            const sy = window.innerHeight/height;
+            if(sx<sy) {
+              Object.assign(canvas.style,{"width":"100dvw","height":"auto","margin":"auto 0"});
+              if(recorder.input) Object.assign(recorder.input.style,{"right":"14px","top":(14+((window.innerHeight-height*sx)>>1))+"px"});
+            }
+            else {
+              Object.assign(canvas.style,{"width":"auto","height":"100dvh","margin":"0 auto"});
+              if(recorder.input) Object.assign(recorder.input.style,{"right":(14+((window.innerWidth-width*sy)>>1))+"px","top":"14px"});
+            }
+          }
+          let tid = 0;
+          window.addEventListener("resize",(e)=>{
+            if(tid) clearTimeout(tid);
+            tid = setTimeout((e)=>resize(),15);
+          });
+          resize();
+          
+          let frame = 0;
+          const draw = (e)=>{
+            context.fillStyle = "#0"+frame.toString(16)+"0";
+            if(++frame>=0x10) frame = 0;
+            
+            context.fillRect(0,0,video.width,video.height);
+            gl.bindTexture(gl.TEXTURE_2D,uniforms.u_texture)
+            gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,video);
+            
+            gl.viewport(0,0,width,height);
+            gl.enable(gl.DEPTH_TEST);
+            
+            gl.clearColor(0,0,0,0);
+            gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+            
+            gl.useProgram(program);
+            twgl.setBuffersAndAttributes(gl,programInfo,bufferInfo);
+            twgl.setUniforms(programInfo,uniforms);
+            gl.drawElements(gl.TRIANGLES,bufferInfo.numElements,gl.UNSIGNED_SHORT,0);
+            
+            if(recorder.active()) {
+              recorder.capture(gl);
+              setTimeout(draw,8);
+            }
+            else {
+              setTimeout(draw,33);
+            }
+          }
+          
+          if(recorder.input) document.body.appendChild(recorder.input);
+          document.body.appendChild(div);
+          draw();
+          
+        }
+      }
+      else {
+        const p = document.createElement("p");
+        p.textContent = "Not Supported: ";
+        Object.assign(p.style,{"color":"#DDD","position":"absolute","z-index":1024,"left":"4px","top":"0"});
+        const a = document.createElement("a");
+        a.textContent = "https://developer.mozilla.org/en-US/docs/Web/API/Window/showSaveFilePicker#browser_compatibility";
+        a.href = "https://developer.mozilla.org/en-US/docs/Web/API/Window/showSaveFilePicker#browser_compatibility";
+        Object.assign(a.style,{"color":"#DDD"});
+        p.appendChild(a);
+        document.body.appendChild(p);
+      }
+      
+    </script>
+  </body>
+</html>
